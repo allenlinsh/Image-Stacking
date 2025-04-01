@@ -92,3 +92,7 @@ The Star Alignment and Stacking Software is a Python-based application designed 
 
   - [Geometric Transformations of Images](https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html)
   - [What are affine transformations?](https://www.youtube.com/watch?v=E3Phj6J287o)
+
+- **Learning Rust**:
+
+  - [Rustlings](https://github.com/rust-lang/rustlings)
