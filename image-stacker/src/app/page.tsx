@@ -191,15 +191,14 @@ export default function Home() {
         </div>
 
         {/* Preview Area */}
-        <div className="flex-1 p-8 flex items-center justify-center bg-accent/5">
+        <div className="flex-1 flex items-center justify-center bg-accent/5 overflow-hidden">
           {selectedImages.length === 0 ? (
             <div className="text-center text-muted-foreground">
               <h3 className="text-xl font-semibold mb-2">No Images Selected</h3>
               <p>Add images using the sidebar to begin stacking</p>
             </div>
           ) : (
-            <div className="relative w-full h-full">
-              {/* Preview of the first image or stacked result will go here */}
+            <div className="relative w-full h-full p-8">
               <ImagePreview
                 image={selectedImages[0]}
                 index={0}
@@ -210,8 +209,12 @@ export default function Home() {
         </div>
 
         {/* Status Bar */}
-        <div className="h-8 border-t border-border px-4 flex items-center text-sm text-muted-foreground">
-          {selectedImages.length} images loaded
+        <div className="h-8 border-t border-border px-4 flex items-center justify-between text-sm text-muted-foreground">
+          <div className="flex items-center gap-4">
+            <span>
+              {selectedImages.length} image{selectedImages.length !== 1 ? "s" : ""} loaded
+            </span>
+          </div>
         </div>
       </div>
     </div>
