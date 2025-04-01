@@ -1,4 +1,4 @@
-# Image Stacking Application
+# Image Stacker
 
 A desktop application built with Tauri 2.0 + Next.js 15 that allows for image stacking and processing.
 

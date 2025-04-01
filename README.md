@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The Star Alignment and Stacking Software is a Python-based application designed to simplify the process of aligning and stacking astrophotography images. Leveraging computer vision techniques, this software will enable users to enhance their night sky photos by reducing noise and improving detail. The target audience includes astrophotography enthusiasts, researchers, and hobbyists looking for a user-friendly yet robust solution.
+The Image Stacker is a Tauri and Rust-based desktop application designed to simplify the process of aligning and stacking astrophotography images. Leveraging computer vision techniques, this software enables users to enhance their night sky photos by reducing noise and improving detail. The target audience includes astrophotography enthusiasts, researchers, and hobbyists looking for a user-friendly yet robust solution.
 
 ## Key Features
 
@@ -17,20 +17,21 @@ The Star Alignment and Stacking Software is a Python-based application designed 
    - Automatic cropping of edges after alignment to handle image shifts.
    - Optional normalization and brightness adjustment for consistent stacking.
 4. **User Interface**:
-   - A simple GUI built with Python (Tkinter or PyQt) to load images, set parameters, and view results in real-time.
-   - CLI option for batch processing and automation.
+   - A modern UI built with Next.js and TailwindCSS for the frontend.
+   - Tauri provides the native desktop capabilities and performance.
+   - Simple, intuitive controls for loading images, adjusting parameters, and viewing results.
 5. **Performance Optimization**:
    - Efficient processing using OpenCV and NumPy for large image datasets.
 
 ## Technical Stack
 
-- **Programming Language**: Python
+- **Programming Language**: Rust, TypeScript, Python
 
 - **Libraries and Frameworks**:
 
   - Image Processing: OpenCV, PIL
   - Numerical Computation: NumPy
-  - GUI Development: Tkinter or PyQt
+  - GUI Development: Tauri
 
 - **Supported Formats**: JPEG, PNG, TIFF, FITS (optional for astrophotography use cases)
 
