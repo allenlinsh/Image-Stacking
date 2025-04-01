@@ -2,8 +2,8 @@
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useState, MouseEvent } from "react";
+import { ImagePreview } from "@/components/ImagePreview";
 
 interface ImageInfo {
   path: string;
@@ -22,19 +22,19 @@ interface OpenDialogOptions {
 }
 
 export default function Home() {
-  const [selectedImage, setSelectedImage] = useState<ImageInfo | null>(null);
+  const [selectedImages, setSelectedImages] = useState<ImageInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSelectImage = async () => {
+  const handleSelectImages = async () => {
     try {
       setIsLoading(true);
       const options: OpenDialogOptions = {
-        multiple: false,
+        multiple: true,
         filters: [
           {
             name: "Images",
-            extensions: ["jpg", "jpeg", "png", "tiff"],
+            extensions: ["jpg", "jpeg", "png", "tiff", "tif"],
           },
         ],
       };
@@ -45,16 +45,15 @@ export default function Home() {
         ) => Promise<string | string[] | null>
       )(options);
 
-      if (selected && typeof selected === "string") {
-        const imageInfo = await invoke<ImageInfo>("get_image_info", {
-          path: selected,
-        });
-        setSelectedImage(imageInfo);
+      if (selected && Array.isArray(selected)) {
+        const newImages = await Promise.all(
+          selected.map((path) => invoke<ImageInfo>("get_image_info", { path }))
+        );
+        setSelectedImages(newImages);
         setError(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load image");
-      setSelectedImage(null);
+      setError(err instanceof Error ? err.message : "Failed to load images");
     } finally {
       setIsLoading(false);
     }
@@ -68,43 +67,21 @@ export default function Home() {
         <Button
           onClick={(e: MouseEvent<HTMLButtonElement>) => {
             e.preventDefault();
-            void handleSelectImage();
+            void handleSelectImages();
           }}
           loading={isLoading}
           className="min-w-32"
         >
-          Select Image
+          Select Images
         </Button>
 
         {error && <p className="text-red-500">{error}</p>}
 
-        {selectedImage && (
-          <div className="mt-4 p-6 border border-gray-200 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex gap-6">
-              <div className="relative w-80 h-auto rounded-lg overflow-hidden shrink-0">
-                <img
-                  src={convertFileSrc(selectedImage.path)}
-                  alt="Selected image preview"
-                  className="w-full h-full object-contain object-top"
-                />
-              </div>
-              <div className="flex flex-col gap-4 min-w-0">
-                <div className="space-y-2 text-gray-600 w-full">
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">Path:</span>
-                    <span className="text-sm break-all pl-2">
-                      {selectedImage.path}
-                    </span>
-                  </div>
-                  <p>
-                    <span className="font-medium">Dimensions:</span>{" "}
-                    {selectedImage.width} x {selectedImage.height}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <div className="w-full max-w-4xl space-y-4">
+          {selectedImages.map((image, index) => (
+            <ImagePreview key={image.path} image={image} index={index} />
+          ))}
+        </div>
       </div>
     </div>
   );
