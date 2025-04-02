@@ -1,0 +1,7 @@
+/data/**/*
+!/data/**/.gitkeep
+/test_data/**
+!/test_data/Raw_Images
+!/test_data/Raw_Images/**
+
+.DS_Store
