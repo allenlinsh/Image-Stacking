@@ -22,7 +22,7 @@ export function ImagePreview({
 }: ImagePreviewProps) {
   if (variant === "thumbnail") {
     return (
-      <div className={cn("flex items-start gap-3 select-none", className)}>
+      <div className={cn("flex items-start gap-3", className)}>
         <div className="relative w-16 h-16 rounded overflow-hidden shrink-0 bg-accent/10">
           <img
             src={convertFileSrc(image.path)}
@@ -43,7 +43,7 @@ export function ImagePreview({
   }
 
   return (
-    <div className={cn("relative w-full h-full select-none", className)}>
+    <div className={cn("relative w-full h-full", className)}>
       <img
         src={convertFileSrc(image.path)}
         alt={`Image ${String(index + 1)}`}
