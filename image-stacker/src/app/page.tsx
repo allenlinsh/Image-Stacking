@@ -4,7 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, MouseEvent, useEffect, ChangeEvent } from "react";
 import { ImagePreview } from "@/components/ImagePreview";
-import { Eraser, Layers, AlignCenter, Download, Trash2 } from "lucide-react";
+import {
+  Eraser,
+  Layers,
+  AlignCenter,
+  Download,
+  Trash2,
+  Copy,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +37,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 
 interface ImageInfo {
   path: string;
@@ -77,6 +86,7 @@ export default function Home() {
     aligned: string[];
     skipped: string[];
     method_used?: string;
+    debug_info?: string[];
   } | null>(null);
 
   // New state for matcher method
@@ -205,6 +215,7 @@ export default function Home() {
         aligned_paths: string[];
         skipped_paths: string[];
         method_used: string;
+        debug_info: string[];
       }>("align_images", {
         params: {
           reference_image_path: refImage.path,
@@ -220,6 +231,7 @@ export default function Home() {
         aligned: result.aligned_paths,
         skipped: result.skipped_paths,
         method_used: result.method_used,
+        debug_info: result.debug_info,
       });
     } catch (err) {
       console.error("Error aligning images:", err);
@@ -293,7 +305,7 @@ export default function Home() {
                         "relative group rounded-lg border transition-all cursor-pointer overflow-hidden",
                         selectedIndices.has(index)
                           ? "border-primary/20"
-                          : "border-border hover:bg-accent/5"
+                          : "border-border hover:bg-accent"
                       )}
                       onClick={(e) => {
                         toggleImageSelection(index, e);
@@ -354,14 +366,19 @@ export default function Home() {
 
         {/* Right Sidebar - Workflow */}
         <div className="w-80 border-l border-border flex flex-col overflow-hidden">
-          <div className="p-4 pb-2 border-b border-border">
+          {/* Fixed Header - Adding shrink-0 to prevent shrinking */}
+          <div className="p-4 pb-2 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Workflow</h2>
             </div>
           </div>
 
-          <Tabs defaultValue="align" className="flex-1 flex flex-col">
-            <div className="border-b">
+          <Tabs
+            defaultValue="align"
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            {/* Fixed Tabs - Adding shrink-0 to prevent shrinking */}
+            <div className="border-b shrink-0">
               <TabsList className="w-full rounded-none border-b-0 bg-transparent p-0 h-10">
                 <TabsTrigger
                   value="align"
@@ -387,11 +404,12 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <TabsContent
                 value="align"
-                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0"
+                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0 data-[state=active]:block"
               >
                 <div className="space-y-2">
                   <Label htmlFor="reference-image">Reference Image</Label>
                   <Select
+                    disabled={selectedImages.length < 2}
                     value={referenceImage.toString()}
                     onValueChange={(v: string) => {
                       setReferenceImage(parseInt(v));
@@ -519,13 +537,55 @@ export default function Home() {
                         aligned.
                       </p>
                     )}
+
+                    <details className="mt-2">
+                      <summary className="text-sm font-medium cursor-pointer">
+                        Debug Information
+                      </summary>
+                      <div className="flex flex-col gap-2 mt-2 text-xs font-mono whitespace-pre-wrap text-muted-foreground bg-accent/10 p-2 rounded-md">
+                        {alignmentResults.debug_info?.map((info, i) => (
+                          <div key={i}>{info}</div>
+                        ))}
+                      </div>
+                      <div className="flex justify-end mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-1 text-xs text-foreground"
+                          onClick={() => {
+                            if (alignmentResults.debug_info) {
+                              navigator.clipboard
+                                .writeText(
+                                  alignmentResults.debug_info.join("\n")
+                                )
+                                .then(() => {
+                                  toast.success("Copied to clipboard", {
+                                    description:
+                                      "Debug information has been copied to your clipboard.",
+                                    duration: 2000,
+                                  });
+                                })
+                                .catch(() => {
+                                  toast.error("Copy failed", {
+                                    description: "Could not copy to clipboard.",
+                                    duration: 2000,
+                                  });
+                                });
+                            }
+                          }}
+                        >
+                          <Copy className="size-3" />
+                          Copy Debug Info
+                        </Button>
+                      </div>
+                    </details>
                   </div>
                 )}
               </TabsContent>
 
               <TabsContent
                 value="stack"
-                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0"
+                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0 data-[state=active]:block"
               >
                 <p className="text-sm text-muted-foreground">
                   Align images first before stacking.
@@ -544,7 +604,7 @@ export default function Home() {
 
               <TabsContent
                 value="export"
-                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0"
+                className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0 data-[state=active]:block"
               >
                 <p className="text-sm text-muted-foreground">
                   Stack images before exporting the result.
@@ -597,6 +657,9 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Add Toaster component */}
+      <Toaster />
     </div>
   );
 }

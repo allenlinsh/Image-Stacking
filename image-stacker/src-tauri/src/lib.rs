@@ -6,7 +6,7 @@ use opencv::{calib3d, core, features2d, imgcodecs, imgproc, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const MATCH_THRESHOLD: f32 = 0.75; // Lowe's ratio test threshold
+const MATCH_THRESHOLD: f32 = 0.8; // Lowe's ratio test threshold
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ImageInfo {
@@ -39,6 +39,7 @@ pub struct AlignmentResult {
   aligned_paths: Vec<String>,
   skipped_paths: Vec<String>,
   method_used: String,
+  debug_info: Vec<String>,
 }
 
 #[tauri::command]
@@ -102,25 +103,17 @@ fn match_features_flann(
   descriptors: &Mat,
   descriptors_ref: &Mat,
 ) -> Result<Vec<DMatch>, String> {
-  // Add the train descriptors first and train the matcher
-  opencv::prelude::DescriptorMatcherTrait::add(
-    matcher,
-    &Vector::<Mat>::from_iter([descriptors_ref.clone()]),
-  )
-  .map_err(|e| format!("Error adding train descriptors: {}", e))?;
-  opencv::prelude::DescriptorMatcherTrait::train(matcher)
-    .map_err(|e| format!("Error training matcher: {}", e))?;
-
   let mut matches = Vector::<Vector<DMatch>>::new();
-  opencv::prelude::DescriptorMatcherTrait::knn_match(
-    matcher,
-    descriptors,
-    &mut matches,
-    2,
-    &Mat::default(),
-    false,
-  )
-  .map_err(|e| format!("Error matching features with FLANN: {}", e))?;
+  matcher
+    .knn_train_match(
+      descriptors,
+      descriptors_ref,
+      &mut matches,
+      2,
+      &core::no_array(),
+      false,
+    )
+    .map_err(|e| format!("Error matching features with FLANN: {}", e))?;
 
   // Apply Lowe's ratio test
   let mut good_matches = Vec::new();
@@ -150,25 +143,17 @@ fn match_features_bf(
   descriptors: &Mat,
   descriptors_ref: &Mat,
 ) -> Result<Vec<DMatch>, String> {
-  // Add the train descriptors first and train the matcher
-  opencv::prelude::DescriptorMatcherTrait::add(
-    matcher,
-    &Vector::<Mat>::from_iter([descriptors_ref.clone()]),
-  )
-  .map_err(|e| format!("Error adding train descriptors: {}", e))?;
-  opencv::prelude::DescriptorMatcherTrait::train(matcher)
-    .map_err(|e| format!("Error training matcher: {}", e))?;
-
   let mut matches = Vector::<Vector<DMatch>>::new();
-  opencv::prelude::DescriptorMatcherTrait::knn_match(
-    matcher,
-    descriptors,
-    &mut matches,
-    2,
-    &Mat::default(),
-    false,
-  )
-  .map_err(|e| format!("Error matching features with BF: {}", e))?;
+  matcher
+    .knn_train_match(
+      descriptors,
+      descriptors_ref,
+      &mut matches,
+      2,
+      &core::no_array(),
+      false,
+    )
+    .map_err(|e| format!("Error matching features with BF: {}", e))?;
 
   // Apply Lowe's ratio test
   let mut good_matches = Vec::new();
@@ -196,6 +181,7 @@ fn match_features_bf(
 async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String> {
   let mut aligned_paths = Vec::new();
   let mut skipped_paths = Vec::new();
+  let mut debug_info = Vec::new();
 
   // Read reference image
   let ref_img = match imgcodecs::imread(&params.reference_image_path, imgcodecs::IMREAD_COLOR) {
@@ -208,6 +194,14 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     }
   };
 
+  // Check if reference image is empty
+  if ref_img.empty() {
+    return Err(format!(
+      "Reference image is empty or could not be read: {}",
+      params.reference_image_path
+    ));
+  }
+
   // Convert reference to grayscale
   let mut ref_gray = Mat::default();
   imgproc::cvt_color(
@@ -218,6 +212,19 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     AlgorithmHint::ALGO_HINT_DEFAULT,
   )
   .map_err(|e| format!("Error converting to grayscale: {}", e))?;
+
+  // Convert grayscale image to 8-bit (required for ORB)
+  let mut ref_gray_8bit = Mat::default();
+  opencv::core::normalize(
+    &ref_gray,
+    &mut ref_gray_8bit,
+    0.0,
+    255.0,
+    opencv::core::NORM_MINMAX,
+    opencv::core::CV_8U,
+    &core::no_array(),
+  )
+  .map_err(|e| format!("Error normalizing grayscale image: {}", e))?;
 
   // Initialize ORB detector
   let nfeatures = (500.0 * params.feature_sensitivity) as i32;
@@ -239,8 +246,8 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
   let mut descriptors_ref = Mat::default();
   orb
     .detect_and_compute(
-      &ref_gray,
-      &Mat::default(),
+      &ref_gray_8bit,
+      &core::no_array(),
       &mut keypoints_ref,
       &mut descriptors_ref,
       false,
@@ -274,6 +281,7 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     // Skip if same as reference
     if image_path == &params.reference_image_path {
       aligned_paths.push(image_path.clone());
+      debug_info.push(format!("Skipped reference image: {}", image_path));
       continue;
     }
 
@@ -281,10 +289,18 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     let img = match imgcodecs::imread(image_path, imgcodecs::IMREAD_COLOR) {
       Ok(img) => img,
       Err(_) => {
+        debug_info.push(format!("Failed to load image: {}", image_path));
         skipped_paths.push(image_path.clone());
         continue;
       }
     };
+
+    // Check if image is empty
+    if img.empty() {
+      debug_info.push(format!("Image is empty: {}", image_path));
+      skipped_paths.push(image_path.clone());
+      continue;
+    }
 
     // Convert to grayscale
     let mut img_gray = Mat::default();
@@ -297,13 +313,26 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     )
     .map_err(|e| format!("Error converting image to grayscale: {}", e))?;
 
+    // Convert 16-bit grayscale image to 8-bit for ORB
+    let mut img_gray_8bit = Mat::default();
+    opencv::core::normalize(
+      &img_gray,
+      &mut img_gray_8bit,
+      0.0,
+      255.0,
+      opencv::core::NORM_MINMAX,
+      opencv::core::CV_8U,
+      &core::no_array(),
+    )
+    .map_err(|e| format!("Error normalizing image to 8-bit: {}", e))?;
+
     // Detect keypoints
     let mut keypoints = Vector::<core::KeyPoint>::new();
     let mut descriptors = Mat::default();
     orb
       .detect_and_compute(
-        &img_gray,
-        &Mat::default(),
+        &img_gray_8bit,
+        &core::no_array(),
         &mut keypoints,
         &mut descriptors,
         false,
@@ -315,18 +344,27 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
       if let Some(ref mut matcher) = flann_matcher {
         match_features_flann(matcher, &descriptors, &descriptors_ref)?
       } else {
+        debug_info.push("Failed to create FLANN matcher".to_string());
         return Err("Failed to create FLANN matcher".to_string());
       }
     } else {
       if let Some(ref mut matcher) = bf_matcher {
         match_features_bf(matcher, &descriptors, &descriptors_ref)?
       } else {
+        debug_info.push("Failed to create BF matcher".to_string());
         return Err("Failed to create BF matcher".to_string());
       }
     };
 
+    debug_info.push(format!(
+      "Image: {}, Matches found: {}, Min required: {}",
+      image_path,
+      good_matches.len(),
+      params.min_matches
+    ));
+
     // Ensure we have enough matches
-    if good_matches.len() > params.min_matches {
+    if good_matches.len() >= params.min_matches {
       // Extract matched keypoints
       let mut src_points = Vec::new();
       let mut dst_points = Vec::new();
@@ -347,6 +385,8 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
           dst_points.push(pt2.pt());
         }
       }
+
+      debug_info.push(format!("Valid points extracted: {}", src_points.len()));
 
       // Check if we have enough points before continuing
       if src_points.len() >= 3 {
@@ -404,9 +444,18 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
 
         aligned_paths.push(output_path);
       } else {
+        debug_info.push(format!(
+          "Not enough valid points (need at least 3): {}",
+          src_points.len()
+        ));
         skipped_paths.push(image_path.clone());
       }
     } else {
+      debug_info.push(format!(
+        "Not enough matches (has {}, needed ≥{})",
+        good_matches.len(),
+        params.min_matches
+      ));
       skipped_paths.push(image_path.clone());
     }
   }
@@ -415,6 +464,7 @@ async fn align_images(params: AlignmentParams) -> Result<AlignmentResult, String
     aligned_paths,
     skipped_paths,
     method_used: matcher_type.to_string(),
+    debug_info,
   })
 }
 
