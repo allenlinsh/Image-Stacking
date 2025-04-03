@@ -1,0 +1,9 @@
+{
+  "rust-analyzer.linkedProjects": ["image-stacker/src-tauri/Cargo.toml"],
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.diagnostics.disabled": ["unresolved-proc-macro"],
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+  }
+}

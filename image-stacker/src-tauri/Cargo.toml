@@ -24,6 +24,7 @@ tauri = { version = "2", features = [ "protocol-asset", "devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 image = "0.25.6"
+opencv = { version = "0.94.4", features = ["clang-runtime"] }
 
 [features]
 # by default Tauri runs in production mode

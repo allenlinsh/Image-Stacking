@@ -2,7 +2,7 @@
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState, MouseEvent, useEffect } from "react";
+import { useState, MouseEvent, useEffect, ChangeEvent } from "react";
 import { ImagePreview } from "@/components/ImagePreview";
 import { Eraser, Layers, AlignCenter, Download, Trash2 } from "lucide-react";
 import {
@@ -29,6 +29,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Input } from "@/components/ui/input";
 
 interface ImageInfo {
   path: string;
@@ -64,12 +65,22 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Alignment parameters
-  const [alignmentMethod, setAlignmentMethod] = useState("orb");
+  // Remove alignmentMethod state since we're combining ORB and FLANN
   const [referenceImage, setReferenceImage] = useState(0);
   const [allowRotation, setAllowRotation] = useState(true);
-  const [featureSensitivity, setFeatureSensitivity] = useState([50]);
-  const [showPreview, setShowPreview] = useState(false);
+  const [featureSensitivity, setFeatureSensitivity] = useState([75]);
+
+  // Add new parameters for the combined approach
+  const [minMatches, setMinMatches] = useState(10); // Minimum matches required
+  const [alignmentInProgress, setAlignmentInProgress] = useState(false);
+  const [alignmentResults, setAlignmentResults] = useState<{
+    aligned: string[];
+    skipped: string[];
+    method_used?: string;
+  } | null>(null);
+
+  // New state for matcher method
+  const [matcherMethod, setMatcherMethod] = useState("auto");
 
   const handleSelectImages = async () => {
     try {
@@ -132,7 +143,7 @@ export default function Home() {
 
     setSelectedIndices((prev) => {
       const newSet = new Set(prev);
-      
+
       // Handle regular click (no modifiers) - clear selection and select only current
       if (!isCtrlPressed && !isShiftPressed) {
         // If clicking on the only selected item, clear selection entirely
@@ -141,11 +152,11 @@ export default function Home() {
           setLastSelectedIndex(null);
           return newSet;
         }
-        
+
         // Otherwise, clear and select only current
         newSet.clear();
         newSet.add(index);
-      } 
+      }
       // Handle Ctrl/Cmd click - toggle the current item
       else if (isCtrlPressed) {
         if (newSet.has(index)) {
@@ -153,20 +164,20 @@ export default function Home() {
         } else {
           newSet.add(index);
         }
-      } 
+      }
       // Handle Shift click - select range from last selected to current
       else if (isShiftPressed && lastSelectedIndex !== null) {
         const start = Math.min(lastSelectedIndex, index);
         const end = Math.max(lastSelectedIndex, index);
-        
+
         for (let i = start; i <= end; i++) {
           newSet.add(i);
         }
       }
-      
+
       return newSet;
     });
-    
+
     // Update the last selected index (if we didn't clear selection above)
     if (selectedIndices.has(index) && selectedIndices.size === 1) {
       // Don't update lastSelectedIndex if we cleared selection
@@ -175,17 +186,51 @@ export default function Home() {
     }
   };
 
-  // Dummy align images function
-  const handleAlignImages = () => {
-    console.log("Aligning images with params:", {
-      method: alignmentMethod,
-      referenceImage,
-      allowRotation,
-      featureSensitivity: featureSensitivity[0],
-    });
-    // Here you would call the Rust function to align images
-    // For now, just toggle the preview
-    setShowPreview(!showPreview);
+  // Update align images function to use the Rust backend
+  const handleAlignImages = async () => {
+    if (selectedImages.length < 2) {
+      return;
+    }
+
+    setAlignmentInProgress(true);
+    setAlignmentResults(null);
+
+    try {
+      // Get the reference image
+      const refImage = selectedImages[referenceImage];
+      const imagePaths = selectedImages.map((img) => img.path);
+
+      // Call the Rust function using the invoke handler
+      const result = await invoke<{
+        aligned_paths: string[];
+        skipped_paths: string[];
+        method_used: string;
+      }>("align_images", {
+        params: {
+          reference_image_path: refImage.path,
+          image_paths: imagePaths,
+          feature_sensitivity: featureSensitivity[0] / 100, // Convert to 0-1 range
+          min_matches: minMatches,
+          allow_rotation: allowRotation,
+          matcher_method: matcherMethod,
+        },
+      });
+
+      setAlignmentResults({
+        aligned: result.aligned_paths,
+        skipped: result.skipped_paths,
+        method_used: result.method_used,
+      });
+    } catch (err) {
+      console.error("Error aligning images:", err);
+      setError(
+        `Failed to align images: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setAlignmentInProgress(false);
+    }
   };
 
   // Dummy stack images function
@@ -345,34 +390,6 @@ export default function Home() {
                 className="p-4 space-y-4 m-0 border-0 data-[state=active]:mt-0"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="alignment-method">
-                    Feature Detection Method
-                  </Label>
-                  <Select
-                    value={alignmentMethod}
-                    onValueChange={setAlignmentMethod}
-                  >
-                    <SelectTrigger
-                      id="alignment-method"
-                      className="w-full truncate"
-                    >
-                      <SelectValue
-                        placeholder="Select method"
-                        className="truncate"
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="orb" className="truncate">
-                        ORB (Oriented FAST and Rotated BRIEF)
-                      </SelectItem>
-                      <SelectItem value="flann" className="truncate">
-                        FLANN (Fast Library for Approximate Nearest Neighbors)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
                   <Label htmlFor="reference-image">Reference Image</Label>
                   <Select
                     value={referenceImage.toString()}
@@ -428,24 +445,80 @@ export default function Home() {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="matcher-method">Matcher Method</Label>
+                  <Select
+                    value={matcherMethod}
+                    onValueChange={setMatcherMethod}
+                  >
+                    <SelectTrigger
+                      id="matcher-method"
+                      className="w-full truncate"
+                    >
+                      <SelectValue
+                        placeholder="Select matcher method"
+                        className="truncate"
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto" className="truncate">
+                        Auto (Recommended)
+                      </SelectItem>
+                      <SelectItem value="bf" className="truncate">
+                        Brute Force (best for small feature sets)
+                      </SelectItem>
+                      <SelectItem value="flann" className="truncate">
+                        FLANN (optimized for large feature sets)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="min-matches">Minimum Matches Required</Label>
+                  <Input
+                    id="min-matches"
+                    type="number"
+                    min={4}
+                    max={100}
+                    value={minMatches}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      setMinMatches(parseInt(e.target.value) || 10);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Minimum number of good keypoint matches needed to align an
+                    image.
+                  </p>
+                </div>
+
                 <Button
                   className="w-full mt-4"
                   onClick={() => {
-                    handleAlignImages();
+                    void handleAlignImages();
                   }}
-                  disabled={selectedImages.length < 2}
+                  disabled={selectedImages.length < 2 || alignmentInProgress}
+                  loading={alignmentInProgress}
                 >
-                  Align Images
+                  {alignmentInProgress ? "Aligning..." : "Align Images"}
                 </Button>
 
-                {showPreview && (
-                  <div className="p-2 border rounded mt-4">
-                    <p className="text-sm text-center">Alignment Preview</p>
-                    <div className="h-32 bg-muted rounded flex items-center justify-center">
-                      <p className="text-sm text-muted-foreground">
-                        Preview would appear here
+                {alignmentResults && (
+                  <div className="mt-4 space-y-2 border rounded-md p-3 bg-accent/5">
+                    <h3 className="font-medium">Alignment Results</h3>
+                    <p className="text-sm">
+                      {alignmentResults.aligned.length} images aligned
+                      successfully
+                      {alignmentResults.method_used &&
+                        ` using ${alignmentResults.method_used} matcher`}
+                      .
+                    </p>
+                    {alignmentResults.skipped.length > 0 && (
+                      <p className="text-sm text-destructive">
+                        {alignmentResults.skipped.length} images could not be
+                        aligned.
                       </p>
-                    </div>
+                    )}
                   </div>
                 )}
               </TabsContent>
